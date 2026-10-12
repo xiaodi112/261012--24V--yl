@@ -1,0 +1,55 @@
+# GD32 标准固件库（第三方，无需上传；与既有工程 .gitignore 约定一致）
+Firmware/
+
+# 编译产物
+*.o
+*.d
+*.crf
+*.lnp
+*.axf
+*.hex
+*.bin
+*.map
+*.htm
+*.dep
+*.iex
+*.tra
+*.uvguix.*
+*.uvoptx
+*.scvd
+JLinkLog.txt
+JLink*
+RTE/
+Listings/
+Objects/
+DebugConfig/
+
+# PDF 文档（体积大；本工程内含板卡原理图与厂商数据手册）
+*.pdf
+
+# 临时文件
+*.tmp
+*.bak
+*.orig
+
+# 构建日志
+build_*.log
+
+# IDE / 工具工程状态
+.vs/
+.idea/
+.vscode/
+SourceInsightPrj/
+
+# 串口联调日志（每次联调重新生成）
+serial_log.txt
+
+# 改动前的本地源码备份（内容已进 git 历史，无需再存）
+_backup_before_coupling_fix/
+
+# 已从 Keil 工程移除、仅剩空壳的目录
+Utilities/
+
+# 注意：这里【没有】忽略 *.uvprojx —— Keil 工程文件是本项目的构建设置
+# （文件分组、头文件搜索路径、目标配置），丢了就只能手工重建，
+# 与 .uvoptx（断点/窗口等个人 IDE 状态）性质不同，应当随代码一起备份。

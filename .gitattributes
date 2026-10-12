@@ -1,0 +1,13 @@
+# 与既有工程约定一致：源码在工作区统一 CRLF。
+# 本机 system 级 core.autocrlf=true，git 本来就会做 CRLF<->LF 归一化；
+# 这里显式写死，避免换机器/换设置后出现整文件差异。
+*.c        eol=crlf
+*.h        eol=crlf
+*.s        eol=crlf
+*.uvprojx  eol=crlf
+*.md       eol=crlf
+
+# 注意：app/ bsp/ gd32_sys/ 下的 .c/.h 是 GBK 编码（中文注释和串口输出字符串），
+# 不是 UTF-8。这里【不要】加任何字符集转换规则（working-tree-encoding 之类）。
+# CRLF<->LF 归一化只涉及 0x0A/0x0D，而 GBK 的续字节范围是 0x40~0x7E / 0x80~0xFE，
+# 不含这两个值，所以中文能逐字节保留；一旦引入字符集转换就会破坏串口输出。
