@@ -136,16 +136,31 @@ void app_assert_fail( const char *file, int line );
 #endif
 
 /* 调用"设置优先级"函数时能使用的最低中断优先级
- * （中断优先级是数值越大越不紧急，所以 7 是最低优先级）。 */
-#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY			0x07
+ * （中断优先级是数值越大越不紧急）。
+ * 本芯片 __NVIC_PRIO_BITS = 2，只有 0~3 共 4 级，所以最低（最不紧急）是 3。 */
+#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY			0x03
 
 /* 允许调用 FreeRTOS"中断安全版"API（带 FromISR 后缀的那些）的最高中断优先级。
+ * 取 2 = 级别 2、3 可调 FromISR，级别 0、1 留给不碰 RTOS 的硬实时中断（纪律，非硬约束）。
+ * 在 Cortex-M3/M4 等用 BASEPRI 的移植上，规则是：优先级数值小于此值的中断禁止调用 FromISR。
  *
- * !! 绝对不要在任何"优先级高于此值"的中断里调用 FromISR 版 API !!
- *    注意方向别搞反：中断优先级是数值越小越紧急，"高于此值"指的是数值比它小。
- *
- * 违反这条会让内核自己的数据结构被破坏，表现为随机死机，且极难定位。 */
-#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY	5
+ * !! 但本工程这条阈值实际是【惰性】的：没有任何代码读它 !!
+ *   本工程用 ARM_CM23 移植，临界区靠 cpsid i（PRIMASK）一次性屏蔽"全部"中断，
+ *   而不是像 M3/M4 那样用 BASEPRI 按优先级屏蔽。所以：
+ *     - 任何优先级的 ISR 都打断不了内核临界区 → 任何优先级都能安全调用 FromISR API；
+ *     - 代价是中断延迟变大（临界区期间连最紧急的中断也要等）→ 临界区要尽量短。
+ *   改这个值的意义：将来若把这份配置搬到 M3/M4，它是个合法且刻意的值。
+ *   详见 RTOS_LEARNING.md 阶段 D。 */
+#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY	2
+
+/* 量程护栏：低优先级不得超过硬件实际位数；FromISR 阈值不得比"最低优先级"更宽松。
+ * 越界时 1/0 触发编译错误，而不是被 NVIC_SetPriority 静默截断成另一个级别。
+ * 注意：configPRIO_BITS 必须已在上面定义，所以这段要放在它之后。 */
+#define CONFIG_STATIC_ASSERT(cond, tag) \
+    enum { config_static_assert_##tag = 1 / ((cond) ? 1 : 0) }
+
+CONFIG_STATIC_ASSERT(configLIBRARY_LOWEST_INTERRUPT_PRIORITY <= ((1U << configPRIO_BITS) - 1U), lowest_range);
+CONFIG_STATIC_ASSERT(configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY <= configLIBRARY_LOWEST_INTERRUPT_PRIORITY, syscall_range);
 
 /* 内核移植层自己使用的中断优先级（PendSV 等）。
  * 这个写法对所有 Cortex-M 移植通用，不依赖任何具体的库函数。 */

@@ -337,7 +337,7 @@
             <v6WtE>0</v6WtE>
             <v6Rtti>0</v6Rtti>
             <VariousControls>
-              <MiscControls></MiscControls>
+              <MiscControls>-Wno-invalid-source-encoding</MiscControls>
               <Define></Define>
               <Undefine></Undefine>
               <IncludePath>.\gd32_sys;.\app;.\bsp;.\middle;.\Firmware\CMSIS\GD\GD32L23x\Include;.\Firmware\GD32L23x_standard_peripheral\Include;.\FreeRTOS\include;.\FreeRTOS\config;.\FreeRTOS\portable\GCC\ARM_CM23_NTZ\non_secure</IncludePath>

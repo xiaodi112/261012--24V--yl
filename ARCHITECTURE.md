@@ -54,9 +54,15 @@ Keil 工程分组已同步：`app` / `bsp` / `middle` / `Firmware` / `gd32_sys` 
 ## 4. 中断与并发约定
 
 - **ISR 只做三件事**：收数据、清标志、发消息（`xQueueSendFromISR` / `vTaskNotifyGiveFromISR`），处理逻辑放任务。
-- 调用 `...FromISR` 的 API 要求中断抢占优先级数值 **≥ 5**
-  （`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY = 5`，共 8 级）。
-  用 `nvic_irq_enable(irq, pre, sub)` 时务必统一优先级分组，且 `pre >= 5`；不得使用优先级 0~4 调用 RTOS API。
+- 中断优先级：本芯片 `__NVIC_PRIO_BITS = 2`，**只有 0~3 共 4 级**。越界值会被系统静默截断
+  （写 6 实际是级别 2，不是"低优先级"），所以 `bsp_config.h` 用编译期断言封住量程。
+  `nvic_irq_enable(irq, priority)` 是**两个参数**——本芯片无子优先级、无优先级分组概念。
+- **`FromISR` 的安全性（勿照搬 M3/M4 的规则）**：本工程用 ARM_CM23 移植，临界区靠
+  `cpsid i`（PRIMASK）屏蔽**全部**中断，而不是用 BASEPRI 按优先级屏蔽。因此
+  **任何优先级的 ISR 都能安全调用 `FromISR` API**，不存在"优先级数值必须 ≥ 阈值"的约束；
+  `configMAX_SYSCALL_INTERRUPT_PRIORITY` / `configKERNEL_INTERRUPT_PRIORITY`
+  在本移植上是**惰性配置**（无任何代码引用）。
+  代价是中断延迟更大 → 本芯片上**临界区必须尽量短**。
 - `SVC/PendSV/SysTick` 由 FreeRTOS 端口接管，**不要**在 `gd32l23x_it.c` 里重新实现。
 - ISR 与任务共享的变量用临界区/RTOS 原语保护；`volatile` 只用于硬件寄存器和 ISR 修改的标志。
 
@@ -124,11 +130,15 @@ FreeRTOS 的 `vPortSetupTimerInterrupt()`；`main.c` 里的调用保留但加了
 3. 系统时钟目前由**内部 IRC16M** 倍频到 64MHz，需确认板上是否贴外部 HXTAL。
 4. 到位/限位输入引脚（参考工程是 PA11/PA12、低电平有效）仍需按本板原理图确认，
    确认后把 `bsp_config.h` 的 `BSP_DIN_PINS_CONFIRMED` 置 1。
-5. **源文件是 GBK 编码，而 armclang 只认 UTF-8**，所以每次编译 `app_console.c` 都会报 13 个
-   `illegal character encoding in string literal` 警告。这些警告在预期内：armclang 会原样透传
-   这些字节，axf 里的中文仍是 GBK，串口终端按 GBK 收才能正常显示（已核对字节一致）。
-   但要注意这个警告**保护不了真正的危险方向**——它只对 GBK 文件报警，对"新写进来的 UTF-8 文件"
-   一声不响，而后者才会让串口输出变成乱码。彻底解决二选一：
-   （a）全部源文件转 UTF-8，并同步把串口终端改成 UTF-8（推荐，但属于工作流变更）；
-   （b）在 C/C++ → Misc Controls 加 `-Wno-invalid-source-encoding` 压掉（需配合
-   "新增文件一律 GBK"的约定）。在那之前，这 13 个警告会一直占位、淹没后续真正的新警告。
+5. **源文件是 GBK 编码，而 armclang 只认 UTF-8**。已在 Keil 的 C/C++ → Misc Controls 加上
+   `-Wno-invalid-source-encoding`，压掉了原来那 13 个 `illegal character encoding` 警告
+   （压之前 13 Warning，压之后 **0 Warning**）。armclang 会原样透传 GBK 字节，
+   axf 里的中文仍是 GBK，串口终端按 GBK 收才能正常显示（已核对字节一致）。
+   **压掉警告的代价与必须遵守的纪律**：
+   - 之后"新文件写成了 UTF-8"也不会再报警，所以必须靠约定守：**新增/编辑源文件一律用 GBK**。
+   - 编辑器会**按自己的编码设置另存**：编辑前先确认中文注释显示正常；若某文件从 GBK
+     变成了 UTF-8，说明是被转码了，要转回来（`iconv -f UTF-8 -t GBK`）。
+   - **坑（本项目已实际踩过一次）**：外部改过文件后，编辑器里打开着的**旧缓冲区**会在你保存时
+     整份覆盖掉新内容——已翻译好的 `FreeRTOSConfig.h` 中文注释就是这样被旧缓冲区覆盖没的。
+     **改了文件就立刻让编辑器重新加载（Reload），否则改动会凭空消失。**
+   - 彻底解决仍是把全部源文件迁 UTF-8 + 串口终端改 UTF-8（属于工作流变更，待决定）。

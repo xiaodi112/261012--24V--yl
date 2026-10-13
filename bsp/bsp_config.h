@@ -126,7 +126,20 @@
 #define BSP_UART_RCU                RCU_USART0
 #define BSP_UART_IRQ                USART0_IRQn
 #define BSP_UART_IRQ_HANDLER        USART0_IRQHandler
-#define BSP_UART_IRQ_PRIO           (6U)        /* ≥5：将来在 ISR 里调 FromISR 的 API 也合法 */
+#define BSP_UART_IRQ_PRIO           (3U)        /* 0~3：本芯片中断优先级只有 2 位共 4 级。
+                                                 * 数值越大越不紧急，调试串口给最低紧急度 3。
+                                                 * 注意：与任务优先级方向相反（任务是大者优先）。 */
+/* 中断优先级必须落在硬件实际实现的位数之内。
+ * 上限从 __NVIC_PRIO_BITS 推导（2 位 -> 0~3），不写死数字：
+ * 换芯片只改数据手册对应的那个宏，这里自动跟着变。
+ * 越界时触发编译错误，而不是被 NVIC_SetPriority 静默截断成另一个优先级。 */
+#define BSP_IRQ_PRIO_MAX            ((1U << __NVIC_PRIO_BITS) - 1U)
+
+
+#define BSP_CONFIG_STATIC_ASSERT(cond, tag) \
+    enum { bsp_config_static_assert_##tag = 1 / ((cond) ? 1 : 0) }
+
+BSP_CONFIG_STATIC_ASSERT(BSP_UART_IRQ_PRIO <= BSP_IRQ_PRIO_MAX, uart_irq_prio_range);
 
 #define BSP_UART_GPIO_PORT          GPIOC
 #define BSP_UART_GPIO_RCU           RCU_GPIOC

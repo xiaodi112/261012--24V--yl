@@ -39,7 +39,7 @@ GD32L233 是**单核**。任一时刻真正在跑的只有**一个**任务。
 RTOS 做的事是：每隔 1ms（一个 tick）看一眼"谁该跑"，然后**切换**过去。
 你以为的"两个任务同时在跑"，实际是每秒切换上千次，快到人看不出来。
 
-> 本工程：`configTICK_RATE_HZ = 1000`（`FreeRTOS/config/FreeRTOSConfig.h:167`）
+> 本工程：`configTICK_RATE_HZ = 1000`（`FreeRTOS/config/FreeRTOSConfig.h:180`）
 > → 1 个 tick = 1ms。这个 1ms 是 RTOS 世界的"心跳"，后面所有时间概念都从它推导。
 
 **推论（很重要）**：在 Keil 里打断点，**整个系统都会停**——所有任务一起冻结。
@@ -102,7 +102,7 @@ xQueueReceive(q, &msg, portMAX_DELAY);  /* 我阻塞等消息，等到为止 */
 | 队列（任务间通信） | `app_motor.c:246/275/298` | 命令队列，控制台 → 电机 |
 | 互斥量（保护共享资源） | `app_console.c:28/49/317` | 保护串口发送 |
 | 中断与任务的分工 | `bsp/bsp_uart.c:200` | ISR 只搬字节，解析在任务 |
-| 中断优先级约束 | `bsp_config.h:129` = 6，阈值 `FreeRTOSConfig.h:150` = 5 | 见阶段 D |
+| 中断优先级 | 串口 = 3（`bsp_config.h:129`，本芯片共 4 级 0~3） | **CM23 用 PRIMASK 全局屏蔽，那条优先级阈值在本芯片是惰性的 → 见阶段 D** |
 | 内核配置总纲 | `FreeRTOS/config/FreeRTOSConfig.h` | **建议从头到尾读一遍，有中文注释** |
 | 致命错误上报 | `gd32_sys/gd32l23x_it.c:100`（断言）、`:127`（HardFault） | 不静默死机 |
 | 曾踩的大坑 | `ARCHITECTURE.md` 第 7.1 节 | **必读**，见阶段 E |
@@ -237,25 +237,46 @@ ISR 里禁止调用：xQueueSend / xSemaphoreTake / vTaskDelay ...
 ISR 里只能调用：xQueueSendFromISR / xSemaphoreGiveFromISR / vTaskNotifyGiveFromISR ...
 ```
 
-#### 更隐蔽的第二个规则：中断优先级
+#### 中断优先级：先把方向搞清，再说规则
 
 Cortex-M 的中断优先级是**数值越小越紧急**——和任务优先级**正好相反**。
-这不是风格问题，是硬约束：
+这两个优先级方向相反，是最容易记混的地方，务必分清。
 
-> 能用 `FromISR` 的中断，其优先级数值必须 **≥ `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`**
-> 本工程：阈值 = 5（`FreeRTOS/FreeRTOSConfig.h:150`）
-> 串口中断优先级配的是 **6**（`bsp/bsp_config.h:129`）→ 合法 ✓
+**① 先讲可迁移的知识（Cortex-M3/M4、M33 上成立）**
 
-为什么有这个限制？因为 FreeRTOS 靠"关中断"来保护内核自己的数据结构，
-而它能关掉的只有数值 ≥ 它阈值的那些中断（BASEPRI 机制）。
-如果某个中断优先级数值比阈值小（更紧急），它会在内核操作链表的过程中打断内核，
-然后去调用 `xQueueSendFromISR` 改同一批链表 → **链表被破坏，随机死机，极难查**。
+如果你以后用 STM32（M3/M4）或 M33，会碰到这条硬约束：
 
-> 记忆口诀：**中断优先级数字越大越"温柔"**。温柔的才允许碰 RTOS。
+> 允许调用 `FromISR` 版 API 的中断，其优先级数值必须 **≥ `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`**。
+> 原因是那些芯片用 **BASEPRI** 按优先级"部分屏蔽"中断：内核只能挡住数值 ≥ 阈值的中断，
+> 比阈值更紧急的仍能打断内核正在更新的数据结构 → **链表被破坏、随机死机、极难查**。
 
-本工程目前 ISR 不调任何 RTOS API，所以其实配任何优先级都安全。
-注释里写"≥5：将来在 ISR 里调 FromISR 的 API 也合法"，是为将来留的余量——
-这是一种值得学的习惯：**先把约束条件满足掉，别等到需要时才想起**。
+**② 但在本工程（Cortex-M23）上，这条规则【不适用】**
+
+Cortex-M23 属于 ARMv8-M **Baseline** 架构，它的临界区用的是
+**`cpsid i`（PRIMASK）——一次性屏蔽"全部"中断**，而不是 BASEPRI 按优先级屏蔽。
+证据都能在工程里核对：
+- `FreeRTOS/portable/GCC/ARM_CM23_NTZ/non_secure/portmacro.h` 里 `portDISABLE_INTERRUPTS()` = `cpsid i`
+- 同目录 `portasm.c` 里连 ISR 用的 `ulSetInterruptMask()` 也是 PRIMASK
+- 整个 `FreeRTOS/portable/` 里 **`BASEPRI` 一次都没出现**
+- `configMAX_SYSCALL_INTERRUPT_PRIORITY` / `configKERNEL_INTERRUPT_PRIORITY` **没有任何代码读它们**（惰性配置）
+
+所以本芯片上的结论是：
+
+> **任何优先级的 ISR 都打断不了内核的临界区 → 任何优先级都能安全调用 `FromISR` API。**
+> 代价在另一头：**中断延迟更大**——临界区期间连最紧急的中断也要排队等。
+
+这是 Baseline 架构的固有取舍，改配置绕不过去。由此推出本芯片上更该记住的一条：
+**临界区必须尽量短**，比在 M3/M4 上更要注意——因为这里被挡住的是所有中断，
+而不只是不紧急的那些。
+
+**③ 那中断优先级在本芯片上还有什么用？**
+
+只剩一件事：**决定中断与中断之间谁先谁后**（谁能否抢占谁），与 RTOS 安全性无关。
+分配原则就一句话：越紧急的外设给越小的数。
+
+> 另：本芯片中断优先级只有 **2 位共 4 级（0~3）**，写 4 以上的数会被 `NVIC_SetPriority`
+> **静默截断**（写 6 实际得到级别 2，不是它字面暗示的"低优先级"）。
+> `bsp_config.h` 里的编译期断言就是为了拦住这种越界。
 
 #### 实验 D1（进阶，建议我带你做）
 把串口的"轮询兜底"改成"ISR 收到字节后用 `xQueueSendFromISR` 通知控制台任务"，
@@ -279,10 +300,10 @@ s_running_ms = (xTaskGetTickCount() - s_move_start_tick) * portTICK_PERIOD_MS;
 但两个无符号数相减即使跨过回绕点，结果依然正确。这是嵌入式的时间标准写法。
 
 #### E2 栈从哪来？—— 一个很容易忽略的事实
-本工程 `configSUPPORT_STATIC_ALLOCATION = 0`（`FreeRTOSConfig.h:172`），
+本工程 `configSUPPORT_STATIC_ALLOCATION = 0`（`FreeRTOSConfig.h:187`），
 意思是所有任务都是**动态创建**的。而动态创建时，**任务的栈和 TCB 都是从堆里分配的**。
 
-所以 10KB 的堆（`FreeRTOSConfig.h:68`）要装下：
+所以 10KB 的堆（`FreeRTOSConfig.h:67`）要装下：
 电机任务栈 1KB + 控制台栈 1KB + 空闲任务栈 512B + 定时器任务栈 512B
 + 4 个 TCB + 队列 + 互斥量 ≈ 4KB
 
@@ -290,7 +311,7 @@ s_running_ms = (xTaskGetTickCount() - s_move_start_tick) * portTICK_PERIOD_MS;
 本工程 `main.c:58` 就是这么处理的——建不出来直接把原因打到串口，不静默死循环。
 
 #### E3 栈到底该给多大？（当前工程的一个缺口）
-`INCLUDE_uxTaskGetStackHighWaterMark` 目前是 **0**（`FreeRTOSConfig.h:113`），
+`INCLUDE_uxTaskGetStackHighWaterMark` 目前是 **0**（`FreeRTOSConfig.h:110`），
 也就是这个 API **被关掉了**——而这个 API 正是回答"栈该给多大"的唯一实用手段：
 它返回任务运行至今**栈最多用到过多少**，剩下的就是裕量。
 
@@ -301,9 +322,9 @@ FreeRTOS 允许你在关键故障时收到回调：
 - `vApplicationStackOverflowHook` —— 栈溢出，实现在 `app/main.c:91`，会打出**哪个任务**溢出了
 - `configASSERT` —— 断言失败，本工程改成 `app_assert_fail()`（`gd32l23x_it.c:100`），
   把**文件名:行号**打到串口。这个改造价值极高：内核配置写错时不会无声卡死
-- `configUSE_MALLOC_FAILED_HOOK` —— 堆耗尽，目前关着（`FreeRTOSConfig.h:85`）
+- `configUSE_MALLOC_FAILED_HOOK` —— 堆耗尽，目前关着（`FreeRTOSConfig.h:84`）
 
-本工程开了 `configCHECK_FOR_STACK_OVERFLOW = 2`（`FreeRTOSConfig.h:88`），
+本工程开了 `configCHECK_FOR_STACK_OVERFLOW = 2`（`FreeRTOSConfig.h:87`），
 这是最严格的检查方式（在栈顶填特定图案，切换任务时检查图案有没有被踩坏）。
 
 #### E5 必读的经典坑：调度器启动前不能开 SysTick
@@ -329,7 +350,7 @@ FreeRTOS 允许你在关键故障时收到回调：
 #### 实验 E2
 用 `vTaskList()` 打印所有任务的状态/优先级/栈/编号。
 本工程 `configUSE_TRACE_FACILITY = 1` 且 `configUSE_STATS_FORMATTING_FUNCTIONS = 1`
-（`FreeRTOSConfig.h:80` / `:126`），这个函数**已经可以直接用**。
+（`FreeRTOSConfig.h:79` / `:122`），这个函数**已经可以直接用**。
 你会直观看到"原来内核里真的有这么多个任务"（包括你没创建的空闲任务和定时器任务）。
 
 ---
@@ -337,7 +358,7 @@ FreeRTOS 允许你在关键故障时收到回调：
 ### 阶段 F：低功耗（本项目芯片的强项）
 
 GD32L233 是低功耗系列，本工程也已经打开了 tickless idle：
-`configUSE_TICKLESS_IDLE = 1`（`FreeRTOSConfig.h:72`），
+`configUSE_TICKLESS_IDLE = 1`（`FreeRTOSConfig.h:71`），
 并且移植层**真的实现了**它（`FreeRTOS/portable/GCC/ARM_CM23_NTZ/non_secure/port.c:365`）。
 
 它做的事是：当所有任务都阻塞、且知道会空闲很久时，
@@ -387,8 +408,9 @@ GD32L233 是低功耗系列，本工程也已经打开了 tickless idle：
 3. 因为 `printf_debug` 内部共用一块 `static char buf[256]`。不加锁时两个任务会互相覆盖
    对方的格式化结果，输出变成串在一起的乱码。用互斥量保证"格式化+发送"整段是原子的。
 4. **不能**。要用 `xQueueSendFromISR()`（带 FromISR 后缀的版本）。
-   而且还有第二个条件：这个中断的**优先级数值必须 ≥ 5**（本工程的
-   `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`），否则会破坏内核数据结构、随机死机。
+   至于中断优先级：**本芯片（Cortex-M23）上任何优先级都安全**——临界区用 PRIMASK
+   屏蔽全部中断，ISR 打断不了内核。但在 Cortex-M3/M4/M33 上另有"优先级数值必须 ≥ 阈值"
+   的硬约束。两者的原因见阶段 D。
 
 </details>
 
