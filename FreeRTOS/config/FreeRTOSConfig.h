@@ -26,48 +26,47 @@
  */
 
 /******************************************************************************
-	See http://www.freertos.org/a00110.html for an explanation of the
-	definitions contained in this file.
+	本文件各项 configXXX 宏的含义与取值说明，见 FreeRTOS 官方文档：
+	http://www.freertos.org/a00110.html
 ******************************************************************************/
 
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H
 
 /*-----------------------------------------------------------
- * Application specific definitions.
+ * 与本应用相关的配置项。
  *
- * These definitions should be adjusted for your particular hardware and
- * application requirements.
+ * 这些取值要按你自己的硬件和应用需求来调整。
  *
- * THESE PARAMETERS ARE DESCRIBED WITHIN THE 'CONFIGURATION' SECTION OF THE
- * FreeRTOS API DOCUMENTATION AVAILABLE ON THE FreeRTOS.org WEB SITE.
+ * 每个参数的含义，在 FreeRTOS 官方文档的
+ * "Configuration（配置）"章节里有逐项说明：
  * http://www.freertos.org/a00110.html
  *----------------------------------------------------------*/
 #include "gd32l23x.h"
 
 extern uint32_t SystemCoreClock;
 
-/* Cortex M23 port configuration. */
+/* Cortex-M23 移植层相关配置 */
 #define configENABLE_MPU								0
 #define configENABLE_FPU								0
 #define configENABLE_TRUSTZONE							0
 
-/* Constants related to the behaviour or the scheduler. */
+/* 调度器行为相关配置 */
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION			0
 #define configUSE_PREEMPTION							1
 #define configUSE_TIME_SLICING							1
 #define configMAX_PRIORITIES							( 5 )
 #define configIDLE_SHOULD_YIELD							1
-#define configUSE_16_BIT_TICKS							0 /* Only for 8 and 16-bit hardware. */
+#define configUSE_16_BIT_TICKS							0 /* 仅用于 8 位和 16 位硬件 */
 
-/* Constants that describe the hardware and memory usage. */
+/* 硬件与内存占用相关配置 */
 #define configCPU_CLOCK_HZ								SystemCoreClock
 #define configMINIMAL_STACK_SIZE						( ( uint16_t ) 128 )
 #define configMINIMAL_SECURE_STACK_SIZE					( 1024 )
 #define configMAX_TASK_NAME_LEN							( 12 )
 #define configTOTAL_HEAP_SIZE							( ( size_t ) ( 10 * 1024 ) )
 
-/* Constants that build features in or out. */
+/* 功能裁剪开关（1 = 启用该功能，0 = 关闭） */
 #define configUSE_MUTEXES								1
 #define configUSE_TICKLESS_IDLE							1
 #define configUSE_APPLICATION_TASK_TAG					0
@@ -79,12 +78,12 @@ extern uint32_t SystemCoreClock;
 #define configUSE_TASK_NOTIFICATIONS					1
 #define configUSE_TRACE_FACILITY						1
 
-/* Constants that define which hook (callback) functions should be used. */
+/* 钩子（回调）函数开关 */
 #define configUSE_IDLE_HOOK								0
 #define configUSE_TICK_HOOK								0
 #define configUSE_MALLOC_FAILED_HOOK					0
 
-/* Constants provided for debugging and optimisation assistance. */
+/* 调试与优化辅助相关配置 */
 #define configCHECK_FOR_STACK_OVERFLOW					2
 /* 断言失败处理：实现在 gd32_sys/gd32l23x_it.c，用调试串口把
  * "断言失败的文件名:行号"直接打出来再停机（不经过 printf / 堆 / RTOS）。
@@ -93,16 +92,14 @@ void app_assert_fail( const char *file, int line );
 #define configASSERT( x )								if( ( x ) == 0 ) { app_assert_fail( __FILE__, __LINE__ ); }
 #define configQUEUE_REGISTRY_SIZE						0
 
-/* Software timer definitions. */
+/* 软件定时器配置 */
 #define configUSE_TIMERS								1
 #define configTIMER_TASK_PRIORITY						( 3 )
 #define configTIMER_QUEUE_LENGTH						5
 #define configTIMER_TASK_STACK_DEPTH					( configMINIMAL_STACK_SIZE  )
 
-/* Set the following definitions to 1 to include the API function, or zero
- * to exclude the API function.  NOTE:  Setting an INCLUDE_ parameter to 0 is
- * only necessary if the linker does not automatically remove functions that are
- * not referenced anyway. */
+/* 下面这些 INCLUDE_ 宏设为 1 才会把对应的 API 函数编译进来，设为 0 则排除掉。
+ * 注意：只有当链接器不会自动删除"未被引用的函数"时，才必须把它们设为 0。 */
 #define INCLUDE_vTaskPrioritySet						1
 #define INCLUDE_uxTaskPriorityGet						1
 #define INCLUDE_vTaskDelete								1
@@ -119,48 +116,49 @@ void app_assert_fail( const char *file, int line );
 #define INCLUDE_xSemaphoreGetMutexHolder				0
 #define INCLUDE_xTimerPendFunctionCall					1
 
-/* This demo makes use of one or more example stats formatting functions.  These
- * format the raw data provided by the uxTaskGetSystemState() function in to
- * human readable ASCII form.  See the notes in the implementation of vTaskList()
- * within FreeRTOS/Source/tasks.c for limitations. */
+/* 本工程会用到若干"统计信息格式化"函数，它们把 uxTaskGetSystemState()
+ * 给出的原始数据格式化成便于阅读的 ASCII 文本。
+ * 用法和限制（例如输出缓冲需要多大）见 FreeRTOS/tasks.c 里 vTaskList() 的实现。 */
 #define configUSE_STATS_FORMATTING_FUNCTIONS			1
 
-/* Dimensions a buffer that can be used by the FreeRTOS+CLI command interpreter.
- * See the FreeRTOS+CLI documentation for more information:
- * http://www.FreeRTOS.org/FreeRTOS-Plus/FreeRTOS_Plus_CLI/ */
+/* FreeRTOS+CLI 命令解释器可用输出缓冲区的长度。
+ * 本工程没有使用 FreeRTOS+CLI，保持原值即可。
+ * 详见 http://www.FreeRTOS.org/FreeRTOS-Plus/FreeRTOS_Plus_CLI/ */
 #define configCOMMAND_INT_MAX_OUTPUT_SIZE				2048
 
-/* Interrupt priority configuration follows...................... */
+/* 下面是中断优先级相关配置 ......................................... */
 
-/* Use the system definition, if there is one. */
+/* 如果系统头文件里已经定义了优先级位数，就用它的 */
 #ifdef __NVIC_PRIO_BITS
 	#define configPRIO_BITS								__NVIC_PRIO_BITS
 #else
-	#define configPRIO_BITS								3	 /* 8 priority levels. */
+	#define configPRIO_BITS								3	 /* 3 位 = 8 级中断优先级 */
 #endif
 
-/* The lowest interrupt priority that can be used in a call to a "set priority"
- * function. */
+/* 调用"设置优先级"函数时能使用的最低中断优先级
+ * （中断优先级是数值越大越不紧急，所以 7 是最低优先级）。 */
 #define configLIBRARY_LOWEST_INTERRUPT_PRIORITY			0x07
 
-/* The highest interrupt priority that can be used by any interrupt service
- * routine that makes calls to interrupt safe FreeRTOS API functions.  DO NOT
- * CALL INTERRUPT SAFE FREERTOS API FUNCTIONS FROM ANY INTERRUPT THAT HAS A
- * HIGHER PRIORITY THAN THIS! (higher priorities are lower numeric values). */
+/* 允许调用 FreeRTOS"中断安全版"API（带 FromISR 后缀的那些）的最高中断优先级。
+ *
+ * !! 绝对不要在任何"优先级高于此值"的中断里调用 FromISR 版 API !!
+ *    注意方向别搞反：中断优先级是数值越小越紧急，"高于此值"指的是数值比它小。
+ *
+ * 违反这条会让内核自己的数据结构被破坏，表现为随机死机，且极难定位。 */
 #define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY	5
 
-/* Interrupt priorities used by the kernel port layer itself.  These are generic
- * to all Cortex-M ports, and do not rely on any particular library functions. */
+/* 内核移植层自己使用的中断优先级（PendSV 等）。
+ * 这个写法对所有 Cortex-M 移植通用，不依赖任何具体的库函数。 */
 #define configKERNEL_INTERRUPT_PRIORITY					( configLIBRARY_LOWEST_INTERRUPT_PRIORITY << ( 8 - configPRIO_BITS ) )
 
-/* !!!! configMAX_SYSCALL_INTERRUPT_PRIORITY must not be set to zero !!!!
- * See http://www.FreeRTOS.org/RTOS-Cortex-M3-M4.html. */
+/* !!!! configMAX_SYSCALL_INTERRUPT_PRIORITY 绝对不能设为 0 !!!!
+ * 原因见 http://www.FreeRTOS.org/RTOS-Cortex-M3-M4.html */
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY			( configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << ( 8 - configPRIO_BITS ) )
 
-/* The #ifdef guards against the file being included from IAR assembly files. */
+/* 这个 #ifdef 是为了防止本文件被 IAR 的汇编文件包含进来 */
 #ifndef __IASMARM__
 
-	/* Constants related to the generation of run time stats. */
+	/* 运行时统计（各任务占用 CPU 的比例）相关配置 */
 	#define configGENERATE_RUN_TIME_STATS				0
 	#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS()
 	#define portGET_RUN_TIME_COUNTER_VALUE()			0
@@ -168,7 +166,9 @@ void app_assert_fail( const char *file, int line );
 
 #endif /* __IASMARM__ */
 
-/* Enable static allocation. */
+/* 是否启用静态分配。
+ * 0 = 只用动态分配：任务的栈和 TCB 都由 pvPortMalloc 从 configTOTAL_HEAP_SIZE
+ * 那块堆里取，所以"任务创建失败"通常就是堆不够。 */
 #define configSUPPORT_STATIC_ALLOCATION					0
 
 #endif /* FREERTOS_CONFIG_H */
